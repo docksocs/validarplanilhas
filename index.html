@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Validador de Planilhas</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f3; color: #1a1a18; min-height: 100vh; padding: 2rem 1rem; }
+  .page { max-width: 860px; margin: 0 auto; }
+  h1 { font-size: 22px; font-weight: 500; margin-bottom: 4px; }
+  .subtitle { font-size: 13px; color: #888780; margin-bottom: 2rem; }
+  .drop-zone {
+    border: 1.5px dashed #b4b2a9;
+    border-radius: 12px;
+    padding: 3rem 2rem;
+    text-align: center;
+    background: #fff;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  .drop-zone:hover, .drop-zone.drag-over { border-color: #378ADD; background: #E6F1FB; }
+  .drop-zone input { display: none; }
+  .drop-icon { font-size: 36px; margin-bottom: 12px; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 9px 18px; border-radius: 8px;
+    border: 1px solid #b4b2a9;
+    background: #fff; color: #1a1a18; font-size: 14px;
+    cursor: pointer; transition: background 0.15s;
+  }
+  .btn:hover { background: #f1efe8; }
+  .btn-primary { background: #185FA5; color: #E6F1FB; border-color: #185FA5; font-weight: 500; }
+  .btn-primary:hover { background: #0C447C; }
+  .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 1.5rem 0; }
+  @media (max-width: 600px) { .summary-grid { grid-template-columns: repeat(2, 1fr); } }
+  .metric { background: #f1efe8; border-radius: 8px; padding: 1rem; text-align: center; }
+  .metric-label { font-size: 12px; color: #888780; margin-bottom: 4px; }
+  .metric-value { font-size: 26px; font-weight: 500; }
+  .metric-ok .metric-value { color: #0F6E56; }
+  .metric-err .metric-value { color: #A32D2D; }
+  .metric-warn .metric-value { color: #854F0B; }
+  .metric-total .metric-value { color: #1a1a18; }
+  .results-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .results-table th { text-align: left; padding: 9px 12px; background: #f1efe8; font-weight: 500; color: #5f5e5a; border-bottom: 1px solid #d3d1c7; }
+  .results-table td { padding: 9px 12px; border-bottom: 1px solid #eeece5; color: #1a1a18; vertical-align: top; }
+  .results-table tr:last-child td { border-bottom: none; }
+  .results-table tr:hover td { background: #fafaf8; }
+  .badge { display: inline-block; font-size: 11px; padding: 2px 9px; border-radius: 99px; font-weight: 500; white-space: nowrap; }
+  .badge-ok { background: #EAF3DE; color: #27500A; }
+  .badge-err { background: #FCEBEB; color: #791F1F; }
+  .badge-warn { background: #FAEEDA; color: #633806; }
+  .err-item { font-size: 12px; color: #A32D2D; margin-top: 3px; display: flex; align-items: flex-start; gap: 5px; }
+  .warn-item { font-size: 12px; color: #854F0B; margin-top: 3px; display: flex; align-items: flex-start; gap: 5px; }
+  .err-item::before { content: "✕"; flex-shrink: 0; font-weight: 700; }
+  .warn-item::before { content: "!"; flex-shrink: 0; font-weight: 700; }
+  .section-title { font-size: 15px; font-weight: 500; color: #1a1a18; }
+  .filter-bar { display: flex; gap: 6px; flex-wrap: wrap; }
+  .filter-btn { font-size: 12px; padding: 4px 13px; border-radius: 99px; border: 1px solid #b4b2a9; background: #fff; cursor: pointer; color: #5f5e5a; transition: all 0.15s; }
+  .filter-btn.active { background: #185FA5; color: #E6F1FB; border-color: #185FA5; }
+  .filter-btn:hover:not(.active) { background: #f1efe8; }
+  .table-wrapper { border: 1px solid #d3d1c7; border-radius: 12px; overflow: hidden; max-height: 420px; overflow-y: auto; }
+  .hidden { display: none !important; }
+  .progress-bar-wrap { background: #d3d1c7; border-radius: 99px; height: 7px; margin: 6px 0 0; }
+  .progress-bar { height: 7px; border-radius: 99px; background: #1D9E75; transition: width 0.4s; }
+  #status-msg { font-size: 13px; color: #888780; margin-top: 10px; min-height: 18px; }
+  .card { background: #fff; border: 1px solid #d3d1c7; border-radius: 12px; padding: 1.25rem 1.5rem; margin-bottom: 1rem; }
+  .top-bar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 1rem; }
+  .info-chips { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+  .chip { font-size: 11px; color: #5f5e5a; background: #f1efe8; border-radius: 4px; padding: 2px 8px; }
+  .export-row { display: flex; justify-content: flex-end; margin-top: 1rem; }
+  a.logo-link { text-decoration: none; color: #888780; font-size: 12px; }
+  footer { margin-top: 2rem; text-align: center; font-size: 12px; color: #b4b2a9; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>Validador de Planilhas</h1>
+  <p class="subtitle">Verifica campos conforme a estrutura do banco de dados</p>
+
+  <div class="drop-zone" id="drop-zone">
+    <div class="drop-icon">📊</div>
+    <p style="font-size:15px;font-weight:500;margin-bottom:8px;">Arraste sua planilha aqui</p>
+    <p style="font-size:13px;color:#888780;margin-bottom:18px;">Suporta .xlsx, .xls e .csv</p>
+    <label class="btn btn-primary" style="cursor:pointer;">
+      Selecionar arquivo
+      <input type="file" id="file-input" accept=".xlsx,.xls,.csv" />
+    </label>
+    <p id="status-msg"></p>
+  </div>
+
+  <div id="results-area" class="hidden">
+    <div class="card" style="margin-top:1.5rem;">
+      <div class="top-bar">
+        <div>
+          <p class="section-title" id="file-name-label">Resultado</p>
+          <div class="info-chips" id="file-chips"></div>
+        </div>
+        <button class="btn" id="reset-btn">↩ Nova planilha</button>
+      </div>
+
+      <div class="summary-grid">
+        <div class="metric metric-total"><div class="metric-label">Total de linhas</div><div class="metric-value" id="m-total">0</div></div>
+        <div class="metric metric-ok"><div class="metric-label">Linhas válidas</div><div class="metric-value" id="m-ok">0</div></div>
+        <div class="metric metric-err"><div class="metric-label">Com erros</div><div class="metric-value" id="m-err">0</div></div>
+        <div class="metric metric-warn"><div class="metric-label">Com avisos</div><div class="metric-value" id="m-warn">0</div></div>
+      </div>
+
+      <div style="margin-top:1rem;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;">
+          <span style="font-size:12px;color:#888780;">Taxa de aprovação</span>
+          <span style="font-size:13px;font-weight:500;" id="pct-label">0%</span>
+        </div>
+        <div class="progress-bar-wrap"><div class="progress-bar" id="progress-bar" style="width:0%"></div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px;">
+        <p class="section-title">Detalhe por linha</p>
+        <div class="filter-bar">
+          <button class="filter-btn active" data-filter="all">Todas</button>
+          <button class="filter-btn" data-filter="error">Só erros</button>
+          <button class="filter-btn" data-filter="warning">Só avisos</button>
+          <button class="filter-btn" data-filter="ok">Só válidas</button>
+        </div>
+      </div>
+      <div class="table-wrapper">
+        <table class="results-table">
+          <thead>
+            <tr>
+              <th style="width:55px">Linha</th>
+              <th style="width:85px">Status</th>
+              <th>Campo(s) com problema</th>
+            </tr>
+          </thead>
+          <tbody id="results-tbody"></tbody>
+        </table>
+      </div>
+      <div class="export-row">
+        <button class="btn btn-primary" id="export-btn">⬇ Exportar relatório (.csv)</button>
+      </div>
+    </div>
+  </div>
+
+  <footer>Validador de Planilhas · funciona 100% offline, nenhum dado é enviado para servidores</footer>
+</div>
+
+<script>
+const SCHEMA = {
+  "primeiro nome":     { maxLen: 50 },
+  "primeirnome":       { maxLen: 50 },
+  "sobrenome":         { maxLen: 70 },
+  "sexo":              { maxLen: 1, enum: ['M','F',''] },
+  "email":             { maxLen: 256, type: 'email' },
+  "e-mail":            { maxLen: 256, type: 'email' },
+  "cpf":               { maxLen: 11, type: 'cpf' },
+  "cnpj":              { maxLen: 14, type: 'cnpj' },
+  "rg":                { maxLen: 15 },
+  "data nascimento":   { type: 'date' },
+  "data de nascimento":{ type: 'date' },
+  "datanascimento":    { type: 'date' },
+  "primeiro nome responsável": { maxLen: 100 },
+  "sobrenome responsável":     { maxLen: 100 },
+  "cep":               { maxLen: 9 },
+  "logradouro":        { maxLen: 200 },
+  "numero":            { maxLen: 10 },
+  "número":            { maxLen: 10 },
+  "complemento":       { maxLen: 200 },
+  "bairro":            { maxLen: 200 },
+  "cidade":            { maxLen: 200 },
+  "estado":            { maxLen: 2 },
+  "telefone":          { maxLen: 20 },
+  "celular":           { maxLen: 20 },
+  "telefone (celular/residencial/comercial)": { maxLen: 20 },
+};
+
+function normalize(s){ return String(s||'').toLowerCase().trim().replace(/\s+/g,' '); }
+
+function matchSchema(col){
+  const n = normalize(col);
+  if (SCHEMA[n]) return { key: n, rule: SCHEMA[n] };
+  for (const k of Object.keys(SCHEMA)){
+    if (n.includes(k) || k.includes(n)) return { key: k, rule: SCHEMA[k] };
+  }
+  return null;
+}
+
+function validateEmail(v){ return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(v).trim()); }
+function validateCPF(v){ return String(v).replace(/\D/g,'').length === 11; }
+function validateCNPJ(v){ return String(v).replace(/\D/g,'').length === 14; }
+function validateDate(v){
+  if (!v) return true;
+  const s = String(v).trim();
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)){
+    const [d,m] = s.split('/').map(Number);
+    return m >= 1 && m <= 12 && d >= 1 && d <= 31;
+  }
+  if (typeof v === 'number'){
+    return !isNaN(new Date(Math.round((v-25569)*86400*1000)).getTime());
+  }
+  return false;
+}
+
+function validateRow(row, colMap){
+  const errors = [], warnings = [];
+  for (const [colOrig, match] of Object.entries(colMap)){
+    const val = row[colOrig];
+    const s = val !== undefined && val !== null ? String(val).trim() : '';
+    const r = match.rule;
+    if (r.enum){
+      if (s !== '' && !r.enum.includes(s.toUpperCase()))
+        errors.push({ col: colOrig, msg: `Valor inválido: "${s}". Esperado: M, F ou vazio` });
+    }
+    if (r.maxLen && s.length > r.maxLen)
+      errors.push({ col: colOrig, msg: `Excede ${r.maxLen} caracteres (tem ${s.length})` });
+    if (r.type === 'email' && s)
+      if (!validateEmail(s)) errors.push({ col: colOrig, msg: `E-mail inválido: "${s}"` });
+    if (r.type === 'cpf' && s)
+      if (!validateCPF(s)) warnings.push({ col: colOrig, msg: `CPF suspeito: "${s}" (deve ter 11 dígitos)` });
+    if (r.type === 'cnpj' && s)
+      if (!validateCNPJ(s)) warnings.push({ col: colOrig, msg: `CNPJ suspeito: "${s}" (deve ter 14 dígitos)` });
+    if (r.type === 'date' && s)
+      if (!validateDate(val)) errors.push({ col: colOrig, msg: `Data fora do formato dd/mm/aaaa: "${s}"` });
+  }
+  return { errors, warnings };
+}
+
+let allRows = [];
+
+function processFile(file){
+  const statusMsg = document.getElementById('status-msg');
+  statusMsg.textContent = 'Lendo arquivo...';
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array', cellDates: false });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const json = XLSX.utils.sheet_to_json(ws, { defval: '' });
+      if (!json.length){ statusMsg.textContent = 'Planilha vazia!'; return; }
+
+      const cols = Object.keys(json[0]);
+      const colMap = {};
+      for (const c of cols){ const m = matchSchema(c); if (m) colMap[c] = m; }
+
+      allRows = json.map((row, i) => {
+        const { errors, warnings } = validateRow(row, colMap);
+        return { line: i+2, errors, warnings, status: errors.length ? 'error' : warnings.length ? 'warning' : 'ok' };
+      });
+
+      const total = allRows.length;
+      const errs  = allRows.filter(r=>r.status==='error').length;
+      const warns = allRows.filter(r=>r.status==='warning').length;
+      const ok    = allRows.filter(r=>r.status==='ok').length;
+      const pct   = Math.round((ok/total)*100);
+
+      document.getElementById('m-total').textContent = total;
+      document.getElementById('m-ok').textContent    = ok;
+      document.getElementById('m-err').textContent   = errs;
+      document.getElementById('m-warn').textContent  = warns;
+      document.getElementById('pct-label').textContent = pct+'%';
+      const bar = document.getElementById('progress-bar');
+      bar.style.width = pct+'%';
+      bar.style.background = pct===100?'#1D9E75': pct>70?'#BA7517':'#E24B4A';
+
+      document.getElementById('file-name-label').textContent = file.name;
+      document.getElementById('file-chips').innerHTML =
+        `<span class="chip">${total} linhas</span><span class="chip">${cols.length} colunas</span><span class="chip">${Object.keys(colMap).length} colunas reconhecidas</span>`;
+
+      renderTable('all');
+      document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));
+      document.querySelector('[data-filter="all"]').classList.add('active');
+      document.getElementById('drop-zone').classList.add('hidden');
+      document.getElementById('results-area').classList.remove('hidden');
+    } catch(err){
+      statusMsg.textContent = 'Erro ao ler o arquivo: ' + err.message;
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function renderTable(filter){
+  const tbody = document.getElementById('results-tbody');
+  const visible = filter === 'all' ? allRows : allRows.filter(r => r.status === filter);
+  if (!visible.length){
+    tbody.innerHTML = `<tr><td colspan="3" style="text-align:center;color:#888780;padding:2rem;">Nenhuma linha neste filtro</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = visible.map(r => {
+    const badge = r.status==='ok'
+      ? `<span class="badge badge-ok">Válida</span>`
+      : r.status==='error'
+      ? `<span class="badge badge-err">Erro</span>`
+      : `<span class="badge badge-warn">Aviso</span>`;
+    const issues = [
+      ...r.errors.map(e=>`<div class="err-item">${e.col}: ${e.msg}</div>`),
+      ...r.warnings.map(w=>`<div class="warn-item">${w.col}: ${w.msg}</div>`)
+    ].join('');
+    return `<tr><td style="font-size:12px;color:#888780;">#${r.line}</td><td>${badge}</td><td>${issues||'<span style="font-size:12px;color:#888780;">—</span>'}</td></tr>`;
+  }).join('');
+}
+
+document.querySelectorAll('.filter-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    renderTable(btn.dataset.filter);
+  });
+});
+
+document.getElementById('reset-btn').addEventListener('click', () => {
+  document.getElementById('results-area').classList.add('hidden');
+  document.getElementById('drop-zone').classList.remove('hidden');
+  document.getElementById('status-msg').textContent = '';
+  document.getElementById('file-input').value = '';
+  allRows = [];
+});
+
+document.getElementById('export-btn').addEventListener('click', () => {
+  const lines = ['Linha,Status,Campo,Mensagem'];
+  for (const r of allRows){
+    if (!r.errors.length && !r.warnings.length){ lines.push(`${r.line},ok,,`); continue; }
+    for (const e of r.errors)   lines.push(`${r.line},erro,"${e.col}","${e.msg}"`);
+    for (const w of r.warnings) lines.push(`${r.line},aviso,"${w.col}","${w.msg}"`);
+  }
+  const blob = new Blob(['\uFEFF'+lines.join('\n')], {type:'text/csv;charset=utf-8;'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'relatorio_validacao.csv';
+  a.click();
+});
+
+const dz = document.getElementById('drop-zone');
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+dz.addEventListener('drop', e => {
+  e.preventDefault(); dz.classList.remove('drag-over');
+  const f = e.dataTransfer.files[0];
+  if (f) processFile(f);
+});
+document.getElementById('file-input').addEventListener('change', e => {
+  if (e.target.files[0]) processFile(e.target.files[0]);
+});
+</script>
+</body>
+</html>
